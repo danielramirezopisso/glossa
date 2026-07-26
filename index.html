@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ΓΛΩΣΣΑ · Griego desde el español</title>
+<meta name="description" content="Curso completo de griego moderno para hispanohablantes: gramática, verbos, vocabulario, textos paralelos y ejercicios. Funciona offline.">
+<meta name="theme-color" content="#F7F4EC">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%230E6E82'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='white' font-family='Georgia'>Γ</text></svg>">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand" onclick="go('curso')">ΓΛΩΣΣΑ<span class="dot">.</span></div>
+  <button class="gear" onclick="go('ajustes')" title="Ajustes">⚙</button>
+</header>
+<div class="meander"></div>
+<main id="app"></main>
+<nav id="tabbar">
+  <button data-tab="curso" onclick="go('curso')"><span class="ticon">Γ</span><span>Curso</span></button>
+  <button data-tab="ejercicios" onclick="go('ejercicios')"><span class="ticon">Ά</span><span>Práctica</span></button>
+  <button data-tab="vocab" onclick="go('vocab')"><span class="ticon">Λ</span><span>Vocab</span></button>
+  <button data-tab="textos" onclick="go('textos')"><span class="ticon">Ν</span><span>Textos</span></button>
+  <button data-tab="dic" onclick="go('dic')"><span class="ticon">Β</span><span id="dicCount">Λεξικό</span></button>
+</nav>
+<div id="sheetOverlay" onclick="closeSheet(event)">
+  <div id="sheet" onclick="event.stopPropagation()">
+    <div class="handle"></div>
+    <div id="sheetTitle"></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
