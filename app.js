@@ -178,9 +178,17 @@ function renderCurso() {
         <span class="lvl">${l.lvl}</span>
       </div>`).join("")}
     <div class="stitle">Verbos con conjugación completa · ${V.length}</div>
-    <div class="chips">
-      ${V.map((v, i) => `<button class="chip" onclick="go('curso',{verb:${i}})"><span class="serif">${esc(v.lemma)}</span> · ${esc(v.es)}</button>`).join("")}
+    <input type="text" id="vFilter" placeholder="Busca un verbo… (griego o español, p.ej. ξεχνάω / olvidar)" oninput="filterVerbs()" style="margin-bottom:10px">
+    <div class="chips" id="verbChips">
+      ${V.map((v, i) => `<button class="chip vchip" data-t="${esc(norm(v.lemma + " " + v.es + " " + v.aor[0]))}" onclick="go('curso',{verb:${i}})"><span class="serif">${esc(v.lemma)}</span> · ${esc(v.es)}</button>`).join("")}
     </div>`;
+}
+
+function filterVerbs() {
+  const q = norm($("vFilter").value.trim());
+  document.querySelectorAll(".vchip").forEach((c) => {
+    c.style.display = !q || c.dataset.t.includes(q) ? "" : "none";
+  });
 }
 
 function renderLesson(i) {
@@ -348,6 +356,8 @@ function renderVocab() {
   const ti = (S.view && S.view.t) || 0, si = (S.view && S.view.s) || 0;
   app.innerHTML = `
     <h1>Vocabulario</h1>
+    <input type="text" id="wSearch" placeholder="Busca en todo: palabras, léxico… (griego o español)" oninput="searchWords()" style="margin-bottom:10px">
+    <div id="wResults"></div>
     <div class="chips">
       <button class="chip ${mode === "temas" ? "on" : ""}" onclick="go('vocab',{mode:'temas'})">Por temas</button>
       <button class="chip ${mode === "frases" ? "on" : ""}" onclick="go('vocab',{mode:'frases'})">Frases por situación</button>
@@ -612,3 +622,33 @@ render();
 loadData().then(render).catch(() => {
   app.innerHTML = `<div class="err">No se pudieron cargar los datos. Comprueba tu conexión y recarga (la primera vez necesita internet; después funciona offline).</div>`;
 });
+
+// búsqueda global de vocabulario (temas + léxico)
+function searchWords() {
+  const q = norm($("wSearch").value.trim());
+  const box = $("wResults");
+  if (!q || q.length < 2) { box.innerHTML = ""; return; }
+  const hits = [];
+  for (const t of S.data.vocab.temas) {
+    for (const [el, es] of t.words) {
+      if (norm(el).includes(q) || norm(es).includes(q)) hits.push([el, es, t.label]);
+      if (hits.length >= 30) break;
+    }
+    if (hits.length >= 30) break;
+  }
+  if (hits.length < 30) {
+    for (const [el, es, pos] of S.data.lexico.lexico) {
+      if (norm(el).includes(q) || norm(es).includes(q)) hits.push([el, es, pos]);
+      if (hits.length >= 30) break;
+    }
+  }
+  box.innerHTML = hits.length === 0 ? `<p class="hint" style="text-align:left">Sin resultados en el diccionario offline. ¡Pregúntame en Claude y guárdala con nota!</p>` :
+    hits.map(([el, es, src]) => `
+      <div class="card row">
+        <div style="flex:1;cursor:pointer" onclick="wordSheet('${esc(el).replace(/'/g, "\\'")}','','${esc(es).replace(/'/g, "\\'")}')">
+          <span class="serif" style="font-size:16px">${esc(el)}</span>
+          <span style="color:var(--muted);font-size:11px;margin-left:8px">${esc(src)}</span>
+          <div style="color:var(--muted);font-size:13px">${esc(es)}</div>
+        </div>
+      </div>`).join("");
+}
