@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LENGUA · Real Spanish for English speakers</title>
+<meta name="description" content="A complete Spanish course for English speakers who already speak but never studied: verb system, tense usage, subjunctive, por/para, ser/estar, idioms, parallel texts. Works offline.">
+<meta name="theme-color" content="#FBF5EA">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23B94A2C'/><text x='50' y='70' font-size='52' text-anchor='middle' fill='%23FBF5EA' font-family='Georgia'>Ñ</text></svg>">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand" onclick="go('curso')">LENGUA<span class="dot">.</span></div>
+  <button class="gear" onclick="go('ajustes')" title="Settings">⚙</button>
+</header>
+<div class="meander"></div>
+<main id="app"></main>
+<nav id="tabbar">
+  <button data-tab="curso" onclick="go('curso')"><span class="ticon">Ñ</span><span>Course</span></button>
+  <button data-tab="ejercicios" onclick="go('ejercicios')"><span class="ticon">¡!</span><span>Practice</span></button>
+  <button data-tab="vocab" onclick="go('vocab')"><span class="ticon">V</span><span>Vocab</span></button>
+  <button data-tab="textos" onclick="go('textos')"><span class="ticon">T</span><span>Texts</span></button>
+  <button data-tab="dic" onclick="go('dic')"><span class="ticon">★</span><span id="dicCount">My words</span></button>
+</nav>
+<div id="sheetOverlay" onclick="closeSheet(event)">
+  <div id="sheet" onclick="event.stopPropagation()">
+    <div class="handle"></div>
+    <div id="sheetTitle"></div>
+    <div id="sheetBody"></div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
