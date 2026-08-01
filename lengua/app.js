@@ -281,6 +281,7 @@ function renderEjercicios() {
     <div class="card tap" onclick="startQuiz('conj')"><div class="t">Verb conjugation</div><div class="s">Which form is «nosotros, preterite, hacer»?</div></div>
     <div class="card tap" onclick="startQuiz('type')"><div class="t">Type the conjugation ⌨</div><div class="s">No multiple choice: write the form yourself (accent-smart)</div></div>
     <div class="card tap" onclick="startQuiz('tense-id')"><div class="t">Name that tense</div><div class="s">See a form like «hiciera» — say which tense it is</div></div>
+    <div class="card tap" onclick="startQuiz('gen')"><div class="t">¿El o la? ♾ Gender gym</div><div class="s">Infinite masculine/feminine reps from the whole vocabulary</div></div>
     <div class="card tap" onclick="startQuiz('num')"><div class="t">Numbers, prices, dates & time 🔢</div><div class="s">347, 24,50 €, 1984, las tres menos cuarto — the hidden weakness</div></div>
     <div class="stitle">Listening 🔊</div>
     <div class="card tap" onclick="startQuiz('listen')"><div class="t">Listen & choose</div><div class="s">Hear a Spanish phrase (device voice) — pick its meaning</div></div>
@@ -307,10 +308,11 @@ function nextQuestion() {
   if (mode === "daily") {
     if (q.total >= 10) return renderDailyEnd();
     const drillKeys = Object.keys(S.data.drills.drills);
-    mode = pick(["drill:" + pick(drillKeys), "conj", "tense-id", "voc-es", "voc-en", "num", "type", "frase"]);
+    mode = pick(["drill:" + pick(drillKeys), "conj", "tense-id", "voc-es", "voc-en", "num", "type", "frase", "gen"]);
     q.sub = mode;
   }
   if (mode === "num") { q.card = genNumCard(); return renderQuiz(); }
+  if (mode === "gen") { q.card = genGenderCard(); return renderQuiz(); }
   if (mode === "listen") {
     const s = pick(S.data.frases.situaciones);
     const [es, en] = pick(s.phrases);
@@ -357,7 +359,7 @@ function nextQuestion() {
   if (mode.startsWith("drill:")) {
     const set = S.data.drills.drills[mode.slice(6)];
     const item = pick(set.items);
-    q.card = { frase: item[0], opts: shuffle([...set.options]), correct: item[1], why: item[2], en: item[3] || "" };
+    q.card = { frase: item[0], opts: shuffle([...(item[4] || set.options)]), correct: item[1], why: item[2], en: item[3] || "" };
   } else if (mode === "conj") {
     const v = pick(S.data.verbos.verbos);
     const tk = S.focus !== "all" ? S.focus : pick(TENSE_KEYS);
@@ -1067,4 +1069,23 @@ function renderChuletas() {
       ["es aburrido (boring)", "está aburrido (bored)"],
       ["es listo (smart)", "está listo (ready)"],
     ])}</div>`;
+}
+
+// ═════════ ITERATION 4: infinite gender generator ═════════
+function genGenderCard() {
+  const SKIP = new Set(["agua", "águila", "alma", "hambre", "aula"]);
+  let es, en, guard = 0;
+  while (guard++ < 200) {
+    const t = pick(S.data.vocab.temas);
+    const w = pick(t.words);
+    const parts = w[0].split(" ");
+    if (parts.length !== 2) continue;
+    if (!["el", "la"].includes(parts[0])) continue;
+    if (/[/(]/.test(w[0])) continue;
+    if (SKIP.has(parts[1])) continue;
+    es = parts; en = w[1].replace(/^the /i, "");
+    break;
+  }
+  if (!es) return genNumCard();
+  return { q: "___ " + es[1], meta: en, correct: es[0], opts: shuffle(["el", "la"]) };
 }

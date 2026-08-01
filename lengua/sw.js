@@ -1,4 +1,4 @@
-const CACHE = "lengua-v3";
+const CACHE = "lengua-v4";
 const ASSETS = ["./","index.html","styles.css","app.js","manifest.json","data/verbos.json","data/vocab.json","data/lecciones.json","data/frases.json","data/lexico.json","data/textos.json","data/drills.json"];
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
