@@ -7,6 +7,9 @@ const S = {
   dic: JSON.parse(localStorage.getItem("lengua-dic") || "[]"),
   hl: JSON.parse(localStorage.getItem("lengua-hl") || "{}"),
   mistextos: JSON.parse(localStorage.getItem("lengua-mistextos") || "[]"),
+  miss: JSON.parse(localStorage.getItem("lengua-miss") || "[]"),
+  stats: JSON.parse(localStorage.getItem("lengua-stats") || "{}"),
+  focus: localStorage.getItem("lengua-focus") || "all",
   quiz: null, hlMode: false, index: null,
 };
 
@@ -21,6 +24,10 @@ const TENSE_KEYS = ["pres","pret","imp","fut","cond","subj","subimp"];
 function saveDic() { localStorage.setItem("lengua-dic", JSON.stringify(S.dic)); updateDicCount(); }
 function saveHl() { localStorage.setItem("lengua-hl", JSON.stringify(S.hl)); }
 function saveMis() { localStorage.setItem("lengua-mistextos", JSON.stringify(S.mistextos)); }
+function saveMiss() { if (S.miss.length > 100) S.miss = S.miss.slice(-100); localStorage.setItem("lengua-miss", JSON.stringify(S.miss)); }
+function saveStats() { localStorage.setItem("lengua-stats", JSON.stringify(S.stats)); }
+function bumpStat(key, ok) { const s = S.stats[key] || { o: 0, t: 0 }; s.t++; if (ok) s.o++; S.stats[key] = s; saveStats(); }
+function setFocus(f) { S.focus = f; localStorage.setItem("lengua-focus", f); render(); }
 function updateDicCount() { $("dicCount").textContent = S.dic.length ? `Words·${S.dic.length}` : "My words"; }
 
 // ————— data + reverse index —————
@@ -162,10 +169,21 @@ function spanish(sentence, ctxEn, keyPrefix) {
 function renderCurso() {
   if (S.view && S.view.lesson != null) return renderLesson(S.view.lesson);
   if (S.view && S.view.verb != null) return renderVerb(S.view.verb);
+  if (S.view && S.view.chuletas) return renderChuletas();
   const L = S.data.lecciones.lecciones, V = S.data.verbos.verbos;
+  const day = Math.floor(Date.now() / 864e5);
+  const dv = V[day % V.length];
+  const allW = S.data.vocab.temas.flatMap((t) => t.words);
+  const dw = allW[day % allW.length];
+  const dvi = day % V.length;
   app.innerHTML = `
     <h1>The course</h1>
     <p class="sub">Spanish grammar built for English speakers who already speak but never studied. Tap any Spanish word anywhere to investigate it — everything works offline.</p>
+    <div class="row" style="gap:8px">
+      <div class="card tap" style="flex:1" onclick="go('curso',{verb:${dvi}})"><div class="s">⭐ Verb of the day</div><div class="t serif">${esc(dv.lemma)}</div><div class="s">${esc(dv.en)}</div></div>
+      <div class="card tap" style="flex:1" onclick="wordSheet('${esc(dw[0]).replace(/'/g, "\\'")}')"><div class="s">⭐ Word of the day</div><div class="t serif">${esc(dw[0])}</div><div class="s">${esc(dw[1])}</div></div>
+    </div>
+    <div class="card tap" onclick="go('curso',{chuletas:1})"><div class="t">📌 Chuletas — cheat sheets</div><div class="s">Endings, strong preterites, subjunctive triggers, por/para & ser/estar at a glance</div></div>
     <div class="stitle">Lessons · ${L.length}</div>
     ${L.map((l, i) => `
       <div class="card tap row" onclick="go('curso',{lesson:${i}})">
@@ -254,10 +272,12 @@ function renderEjercicios() {
   app.innerHTML = `
     <h1>Practice</h1>
     <p class="sub">Infinite exercises generated from the course. All offline, all free, forever.</p>
+    ${S.miss.length ? `<div class="card tap" style="border-color:var(--danger)" onclick="startQuiz('repaso')"><div class="t">Review your mistakes · ${S.miss.length}</div><div class="s">Everything you got wrong comes back until you beat it</div></div>` : ""}
     <div class="card tap" style="border-color:var(--honey-deep)" onclick="startQuiz('daily')"><div class="t">Daily 10 ${st.streak > 0 ? "🔥 " + st.streak : ""}</div><div class="s">${st.doneToday ? "Done today ✓ — play again anytime" : "Ten mixed questions a day keeps the olvido away"}</div></div>
     <div class="stitle">The Big Battles</div>
-    ${Object.keys(D).map((k) => `<div class="card tap" onclick="startQuiz('drill:${k}')"><div class="t">${esc(D[k].title)}</div><div class="s">${esc(D[k].sub)}</div></div>`).join("")}
+    ${Object.keys(D).map((k) => { const st2 = S.stats["drill:" + k]; const acc = st2 && st2.t >= 5 ? ` · ${Math.round((st2.o / st2.t) * 100)}%` : ""; return `<div class="card tap" onclick="startQuiz('drill:${k}')"><div class="t">${esc(D[k].title)}${acc}</div><div class="s">${esc(D[k].sub)}</div></div>`; }).join("")}
     <div class="stitle">Core skills</div>
+    <div class="chips">${["all", ...TENSE_KEYS].map((f) => `<button class="chip ${S.focus === f ? "on" : ""}" onclick="setFocus('${f}')">${f === "all" ? "All tenses" : S.data.verbos.tiempos[f]}</button>`).join("")}</div>
     <div class="card tap" onclick="startQuiz('conj')"><div class="t">Verb conjugation</div><div class="s">Which form is «nosotros, preterite, hacer»?</div></div>
     <div class="card tap" onclick="startQuiz('type')"><div class="t">Type the conjugation ⌨</div><div class="s">No multiple choice: write the form yourself (accent-smart)</div></div>
     <div class="card tap" onclick="startQuiz('tense-id')"><div class="t">Name that tense</div><div class="s">See a form like «hiciera» — say which tense it is</div></div>
@@ -265,6 +285,7 @@ function renderEjercicios() {
     <div class="stitle">Listening 🔊</div>
     <div class="card tap" onclick="startQuiz('listen')"><div class="t">Listen & choose</div><div class="s">Hear a Spanish phrase (device voice) — pick its meaning</div></div>
     <div class="card tap" onclick="startQuiz('dictado')"><div class="t">Dictation</div><div class="s">Hear it, then rebuild the sentence word by word</div></div>
+    ${window.SpeechRecognition || window.webkitSpeechRecognition ? `<div class="card tap" onclick="startQuiz('sayit')"><div class="t">Say it 🎙️</div><div class="s">Read the phrase out loud — the app checks your pronunciation</div></div>` : ""}
     <div class="stitle">Vocabulary</div>
     <div class="card tap" onclick="startQuiz('voc-es')"><div class="t">Spanish → English</div><div class="s">Recognize the Spanish word</div></div>
     <div class="card tap" onclick="startQuiz('voc-en')"><div class="t">English → Spanish</div><div class="s">Find the Spanish word</div></div>
@@ -309,9 +330,26 @@ function nextQuestion() {
     speak(es);
     return renderQuiz();
   }
+  if (mode === "repaso") {
+    if (!S.miss.length) { S.quiz = null; return render(); }
+    const entry = pick(S.miss);
+    q.missEntry = entry;
+    q.card = JSON.parse(JSON.stringify(entry.card));
+    if (q.card.opts) q.card.opts = shuffle(q.card.opts);
+    if (q.card.audio) speak(q.card.audio);
+    q.sub = entry.sub || "";
+    return renderQuiz();
+  }
+  if (mode === "sayit") {
+    const s = pick(S.data.frases.situaciones);
+    const cands = s.phrases.filter((p) => { const n = p[0].split(/\s+/).length; return n >= 3 && n <= 8; });
+    const [es, en] = pick(cands.length ? cands : s.phrases);
+    q.card = { sayit: true, es, en: en.split("(")[0].trim() };
+    return renderQuiz();
+  }
   if (mode === "type") {
     const v = pick(S.data.verbos.verbos);
-    const tk = pick(TENSE_KEYS);
+    const tk = S.focus !== "all" ? S.focus : pick(TENSE_KEYS);
     const pi = Math.floor(Math.random() * 6);
     q.card = { typeIn: true, lemma: v.lemma, meta: `${S.data.verbos.personas[pi]} · ${S.data.verbos.tiempos[tk]} · (${v.en})`, correct: v[tk][pi], hint: S.data.verbos.uso[tk] };
     return renderQuiz();
@@ -322,7 +360,7 @@ function nextQuestion() {
     q.card = { frase: item[0], opts: shuffle([...set.options]), correct: item[1], why: item[2], en: item[3] || "" };
   } else if (mode === "conj") {
     const v = pick(S.data.verbos.verbos);
-    const tk = pick(TENSE_KEYS);
+    const tk = S.focus !== "all" ? S.focus : pick(TENSE_KEYS);
     const pi = Math.floor(Math.random() * 6);
     const correct = v[tk][pi];
     const pool = new Set([correct]);
@@ -372,6 +410,20 @@ function renderQuiz() {
       <div class="built serif">${c.built.map((i) => esc(c.words[i])).join(" ") || "&nbsp;"}</div>
       <div class="wordbank">${c.order.map((i) => `<button class="wtoken ${c.built.includes(i) ? "used" : ""}" onclick="tapToken(${i})">${esc(c.words[i])}</button>`).join("")}</div>
       ${c.done ? `<div style="color:var(--ok);font-weight:700;margin:8px 0">¡Correcto! — ${esc(c.en)}</div><button class="btn" onclick="nextQuestion()">Next →</button>` : `<button class="btn ghost" onclick="S.quiz.card.built=[];renderQuiz()">Clear</button>`}
+      </div>`;
+    return;
+  }
+  if (c && c.sayit) {
+    app.innerHTML = `${head}
+      <div class="quiz">
+        <div class="qm">Read this out loud:</div>
+        <div class="q serif">${esc(c.es)}</div>
+        <div class="qm">${esc(c.en)}</div>
+        <div class="btnrow" style="justify-content:center;margin:10px 0">
+          <button class="btn ghost" onclick="speak(S.quiz.card.es)">🔊 Hear it</button>
+          <button class="btn" id="micBtn" onclick="listenUp()">🎙️ Say it</button>
+        </div>
+        <div id="sayFb" style="font-size:15px;min-height:24px"></div>
       </div>`;
     return;
   }
@@ -440,8 +492,15 @@ function answer(btn) {
     if (b.dataset.o === c.correct) b.classList.add("right");
     else if (b === btn) b.classList.add("wrong");
   });
-  if (chosen === c.correct) { q.score++; q.streak++; } else q.streak = 0;
-  setTimeout(nextQuestion, chosen === c.correct ? 700 : 1700);
+  const ok = chosen === c.correct;
+  if (ok) { q.score++; q.streak++; } else q.streak = 0;
+  if (q.mode === "repaso") {
+    if (ok) { const i = S.miss.indexOf(q.missEntry); if (i > -1) S.miss.splice(i, 1); saveMiss(); }
+  } else if (!ok) {
+    S.miss.push({ t: "mc", sub: q.sub || q.mode, card: { q: c.q, meta: c.meta, correct: c.correct, opts: c.opts, qSerif: c.qSerif, audio: c.audio } });
+    saveMiss();
+  }
+  setTimeout(nextQuestion, ok ? 700 : 1700);
 }
 
 function answerDrill(btn) {
@@ -455,6 +514,14 @@ function answerDrill(btn) {
   });
   const ok = chosen === c.correct;
   if (ok) { q.score++; q.streak++; } else q.streak = 0;
+  const dk = q.mode.startsWith("drill:") ? q.mode : (q.sub && q.sub.startsWith("drill:") ? q.sub : null);
+  if (dk && q.mode !== "repaso") bumpStat(dk, ok);
+  if (q.mode === "repaso") {
+    if (ok) { const i = S.miss.indexOf(q.missEntry); if (i > -1) S.miss.splice(i, 1); saveMiss(); }
+  } else if (!ok) {
+    S.miss.push({ t: "drill", sub: dk || q.mode, card: { frase: c.frase, opts: c.opts, correct: c.correct, why: c.why, en: c.en } });
+    saveMiss();
+  }
   $("drillWhy").innerHTML = `<b style="color:${ok ? "var(--ok)" : "var(--danger)"}">${ok ? "✓" : "✗"} ${esc(c.correct)}</b> — ${esc(c.why)} <div style="margin-top:8px"><button class="btn" onclick="nextQuestion()">Next →</button></div>`;
 }
 
@@ -559,13 +626,13 @@ function renderTextos() {
   app.innerHTML = `
     <h1>Parallel texts</h1>
     <p class="sub">Readings in Spanish and English, sentence by sentence. Tap Spanish words to investigate them, English sentences to see their partner, and use the highlighter ✏.</p>
-    ${["A2", "B1", "B2"].map((lv) => {
+    ${["Serie", "A2", "B1", "B2"].map((lv) => {
       const items = T.map((t, i) => t.lvl === lv ? `
         <div class="card tap row" onclick="go('textos',{texto:${i}})">
           <div><div class="t serif">${esc(t.titulo_es)}</div><div class="s" style="font-family:inherit">${esc(t.titulo_en)}</div></div>
           <span class="lvl">${t.frases.length} sentences</span>
         </div>` : "").join("");
-      return items ? `<div class="stitle">Level ${lv}</div>${items}` : "";
+      return items ? `<div class="stitle">${lv === "Serie" ? "📖 The series · Sam en Barcelona" : "Level " + lv}</div>${items}` : "";
     }).join("")}
     <div class="stitle">My texts · ${S.mistextos.length}</div>
     ${S.mistextos.map((t, i) => `
@@ -826,8 +893,10 @@ function checkTyped() {
     fb.innerHTML = `<b style="color:var(--ok)">Almost perfect ✓</b> — watch the accents: <b class="serif">${esc(c.correct)}</b>`;
   } else {
     S.quiz.streak = 0;
+    if (S.quiz.mode !== "repaso") { S.miss.push({ t: "type", sub: "type", card: { typeIn: true, lemma: c.lemma, meta: c.meta, correct: c.correct, hint: c.hint } }); saveMiss(); }
     fb.innerHTML = `<b style="color:var(--danger)">✗</b> The form is <b class="serif">${esc(c.correct)}</b><br><span style="color:var(--ink-soft);font-size:13px">${esc(c.hint || "")}</span>`;
   }
+  if (S.quiz.mode === "repaso" && stripAcc(ans) === stripAcc(c.correct)) { const i = S.miss.indexOf(S.quiz.missEntry); if (i > -1) S.miss.splice(i, 1); saveMiss(); }
   fb.innerHTML += `<div style="margin-top:8px"><button class="btn" onclick="nextQuestion()">Next →</button></div>`;
   $("typeAns").disabled = true;
 }
@@ -919,4 +988,83 @@ function renderDailyEnd() {
         <button class="btn ghost" onclick="S.quiz=null;render()">Back to Practice</button>
       </div>
     </div>`;
+}
+
+// ═════════ ITERATION 3: say-it recognition + chuletas ═════════
+function listenUp() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const c = S.quiz.card, fb = $("sayFb"), btn = $("micBtn");
+  if (!SR) { fb.textContent = "Speech recognition isn't available in this browser."; return; }
+  try {
+    const r = new SR();
+    r.lang = "es-ES"; r.interimResults = false; r.maxAlternatives = 3;
+    btn.disabled = true; fb.innerHTML = `<span style="color:var(--muted)">Listening… 🎙️</span>`;
+    r.onresult = (e) => {
+      btn.disabled = false;
+      let best = 0, heardBest = "";
+      const target = stripAcc(c.es).replace(/[¿?¡!.,;:«»]/g, "").split(" ").filter(Boolean);
+      for (const alt of e.results[0]) {
+        const heard = stripAcc(alt.transcript).replace(/[¿?¡!.,;:«»]/g, "").split(" ").filter(Boolean);
+        const hits = target.filter((w) => heard.includes(w)).length;
+        const scoreV = hits / target.length;
+        if (scoreV > best) { best = scoreV; heardBest = alt.transcript; }
+      }
+      S.quiz.total++;
+      if (best >= 0.7) {
+        S.quiz.score++; S.quiz.streak++;
+        fb.innerHTML = `<b style="color:var(--ok)">✓ ¡Muy bien!</b> Heard: «${esc(heardBest)}» (${Math.round(best * 100)}% match)<div style="margin-top:8px"><button class="btn" onclick="nextQuestion()">Next →</button></div>`;
+      } else {
+        S.quiz.streak = 0;
+        fb.innerHTML = `<b style="color:var(--danger)">✗</b> Heard: «${esc(heardBest || "…nothing clear")}» — tap 🔊, then try again<div style="margin-top:8px"><button class="btn ghost" onclick="listenUp()">🎙️ Retry</button> <button class="btn" onclick="nextQuestion()">Next →</button></div>`;
+      }
+    };
+    r.onerror = () => { btn.disabled = false; fb.innerHTML = `Couldn't hear you — check the mic permission and try again.`; };
+    r.start();
+  } catch (e) { fb.textContent = "Mic error: " + e.message; }
+}
+
+function renderChuletas() {
+  const tb = (h, rows) => `<table class="ltbl"><tr>${h.map((x) => `<th>${x}</th>`).join("")}</tr>${rows.map((r) => `<tr>${r.map((x) => `<td>${x}</td>`).join("")}</tr>`).join("")}</table>`;
+  app.innerHTML = `
+    <button class="btn ghost" onclick="go('curso')">← The course</button>
+    <h1>📌 Chuletas</h1>
+    <p class="sub">Cheat sheets — «chuleta» also means pork chop AND the note you sneak into an exam. Spain in one word.</p>
+    <div class="card"><div class="t">Regular endings</div>${tb(["", "-ar (hablar)", "-er (comer)", "-ir (vivir)"], [
+      ["Present", "-o -as -a -amos -áis -an", "-o -es -e -emos -éis -en", "-o -es -e -imos -ís -en"],
+      ["Preterite", "-é -aste -ó -amos -asteis -aron", "-í -iste -ió -imos -isteis -ieron", "(same as -er)"],
+      ["Imperfect", "-aba -abas -aba -ábamos -abais -aban", "-ía -ías -ía -íamos -íais -ían", "(same as -er)"],
+      ["Subjunctive", "-e -es -e -emos -éis -en", "-a -as -a -amos -áis -an", "(same as -er)"],
+    ])}<div class="s" style="margin-top:6px">Future & conditional: whole infinitive + é/ás/á/emos/éis/án · ía/ías/ía/íamos/íais/ían</div></div>
+    <div class="card"><div class="t">The 12 strong preterites (no accents!)</div>${tb(["Verb", "Stem", "Yo form"], [
+      ["tener", "tuv-", "tuve"], ["estar", "estuv-", "estuve"], ["poder", "pud-", "pude"], ["poner", "pus-", "puse"],
+      ["saber", "sup-", "supe"], ["querer", "quis-", "quise"], ["venir", "vin-", "vine"], ["hacer", "hic-", "hice (él hizo)"],
+      ["decir", "dij-", "dije (dijeron)"], ["traer", "traj-", "traje (trajeron)"], ["andar", "anduv-", "anduve"], ["haber", "hub-", "hubo"],
+    ])}<div class="s" style="margin-top:6px">Plus the twins: ser/ir → fui fuiste fue fuimos fuisteis fueron · dar → di diste dio · ver → vi viste vio</div></div>
+    <div class="card"><div class="t">Future/conditional irregular stems</div>${tb(["Verb", "Stem"], [
+      ["tener → tendr-", "salir → saldr-"], ["poner → pondr-", "venir → vendr-"], ["poder → podr-", "haber → habr-"],
+      ["saber → sabr-", "querer → querr-"], ["hacer → har-", "decir → dir-"], ["valer → valdr-", "caber → cabr-"],
+    ])}</div>
+    <div class="card"><div class="t">Subjunctive triggers (WEIRDO-ish)</div>${tb(["Trigger", "Example"], [
+      ["querer/esperar que", "Quiero que vengas"],
+      ["es + adj + que", "Es importante que duermas"],
+      ["para que", "Te lo digo para que lo sepas"],
+      ["cuando (future)", "Cuando llegues, llámame"],
+      ["no creo que / dudo que", "No creo que sea tarde"],
+      ["ojalá (que)", "Ojalá llueva café"],
+      ["aunque (hypothetical)", "Aunque sea caro, lo compro"],
+      ["me alegra / me molesta que", "Me alegra que estés aquí"],
+    ])}</div>
+    <div class="card"><div class="t">Por vs Para in 8 lines</div>${tb(["POR (through/cause/exchange)", "PARA (goal/destination/deadline)"], [
+      ["por la mañana (during)", "para mañana (deadline)"],
+      ["por el parque (through)", "para el parque (headed to)"],
+      ["por ti (because of you)", "para ti (for you to have)"],
+      ["gracias por venir", "estudio para aprender"],
+    ])}</div>
+    <div class="card"><div class="t">Ser vs Estar in one breath</div>${tb(["SER (identity)", "ESTAR (state/location)"], [
+      ["es médico · es de Ohio", "está cansado · está en casa"],
+      ["es alto (trait)", "está guapo hoy (state)"],
+      ["la fiesta ES en mi casa (event)", "el libro ESTÁ en la mesa (thing)"],
+      ["es aburrido (boring)", "está aburrido (bored)"],
+      ["es listo (smart)", "está listo (ready)"],
+    ])}</div>`;
 }
