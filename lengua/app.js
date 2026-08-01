@@ -174,9 +174,29 @@ function renderCurso() {
       </div>`).join("")}
     <div class="stitle">Verbs, fully conjugated · ${V.length}</div>
     <input type="text" id="vFilter" placeholder="Search a verb… (Spanish or English, e.g. dormir / to sleep)" oninput="filterVerbs()" style="margin-bottom:10px">
-    <div class="chips" id="verbChips">
-      ${V.map((v, i) => `<button class="chip vchip" data-t="${esc(norm(v.lemma + " " + v.en + " " + v.pret[0]))}" onclick="go('curso',{verb:${i}})"><span class="serif">${esc(v.lemma)}</span> · ${esc(v.en)}</button>`).join("")}
-    </div>`;
+    ${verbGroups(V)}`;
+}
+
+function verbGroups(V) {
+  const buckets = [
+    ["Top irregulars", (t) => t.startsWith("irregular")],
+    ["Boot e→ie (pienso)", (t) => t.includes("e>ie")],
+    ["Boot o→ue (puedo)", (t) => t.includes("o>ue")],
+    ["Boot e→i (pido)", (t) => t.includes("e>i") && !t.includes("e>ie")],
+    ["u→ue · í · ú (juego, envío)", (t) => t.includes("u>ue") || t.includes("í") || t.includes("ú")],
+    ["-ar (regular & spelling)", (t) => t.startsWith("ar")],
+    ["-er", (t) => t.startsWith("er")],
+    ["-ir", (t) => t.startsWith("ir")],
+  ];
+  const used = new Set();
+  return buckets.map(([label, test]) => {
+    const items = V.map((v, i) => {
+      if (used.has(i) || !test(v.tipo)) return "";
+      used.add(i);
+      return `<button class="chip vchip" data-t="${esc(norm(v.lemma + " " + v.en + " " + v.pret[0]))}" onclick="go('curso',{verb:${i}})"><span class="serif">${esc(v.lemma)}</span> · ${esc(v.en)}</button>`;
+    }).join("");
+    return items ? `<div class="stitle" style="font-size:11px;margin-top:10px">${label}</div><div class="chips">${items}</div>` : "";
+  }).join("");
 }
 
 function filterVerbs() {
@@ -230,16 +250,24 @@ function renderVerb(i) {
 function renderEjercicios() {
   if (S.quiz) return renderQuiz();
   const D = S.data.drills.drills;
+  const st = getStreak();
   app.innerHTML = `
     <h1>Practice</h1>
     <p class="sub">Infinite exercises generated from the course. All offline, all free, forever.</p>
+    <div class="card tap" style="border-color:var(--honey-deep)" onclick="startQuiz('daily')"><div class="t">Daily 10 ${st.streak > 0 ? "🔥 " + st.streak : ""}</div><div class="s">${st.doneToday ? "Done today ✓ — play again anytime" : "Ten mixed questions a day keeps the olvido away"}</div></div>
     <div class="stitle">The Big Battles</div>
     ${Object.keys(D).map((k) => `<div class="card tap" onclick="startQuiz('drill:${k}')"><div class="t">${esc(D[k].title)}</div><div class="s">${esc(D[k].sub)}</div></div>`).join("")}
     <div class="stitle">Core skills</div>
     <div class="card tap" onclick="startQuiz('conj')"><div class="t">Verb conjugation</div><div class="s">Which form is «nosotros, preterite, hacer»?</div></div>
+    <div class="card tap" onclick="startQuiz('type')"><div class="t">Type the conjugation ⌨</div><div class="s">No multiple choice: write the form yourself (accent-smart)</div></div>
     <div class="card tap" onclick="startQuiz('tense-id')"><div class="t">Name that tense</div><div class="s">See a form like «hiciera» — say which tense it is</div></div>
-    <div class="card tap" onclick="startQuiz('voc-es')"><div class="t">Vocabulary: Spanish → English</div><div class="s">Recognize the Spanish word</div></div>
-    <div class="card tap" onclick="startQuiz('voc-en')"><div class="t">Vocabulary: English → Spanish</div><div class="s">Find the Spanish word</div></div>
+    <div class="card tap" onclick="startQuiz('num')"><div class="t">Numbers, prices, dates & time 🔢</div><div class="s">347, 24,50 €, 1984, las tres menos cuarto — the hidden weakness</div></div>
+    <div class="stitle">Listening 🔊</div>
+    <div class="card tap" onclick="startQuiz('listen')"><div class="t">Listen & choose</div><div class="s">Hear a Spanish phrase (device voice) — pick its meaning</div></div>
+    <div class="card tap" onclick="startQuiz('dictado')"><div class="t">Dictation</div><div class="s">Hear it, then rebuild the sentence word by word</div></div>
+    <div class="stitle">Vocabulary</div>
+    <div class="card tap" onclick="startQuiz('voc-es')"><div class="t">Spanish → English</div><div class="s">Recognize the Spanish word</div></div>
+    <div class="card tap" onclick="startQuiz('voc-en')"><div class="t">English → Spanish</div><div class="s">Find the Spanish word</div></div>
     <div class="card tap" onclick="startQuiz('frase')"><div class="t">Build the sentence</div><div class="s">Put a real sentence back in order</div></div>
     <div class="card tap" onclick="startQuiz('dic')"><div class="t">Review My words</div><div class="s">${S.dic.length < 4 ? "Save at least 4 words to practice" : `Flashcards with your ${S.dic.length} words (spaced repetition)`}</div></div>`;
 }
@@ -254,11 +282,45 @@ function startQuiz(mode) {
 
 function nextQuestion() {
   const q = S.quiz;
-  if (q.mode.startsWith("drill:")) {
-    const set = S.data.drills.drills[q.mode.slice(6)];
+  let mode = q.mode;
+  if (mode === "daily") {
+    if (q.total >= 10) return renderDailyEnd();
+    const drillKeys = Object.keys(S.data.drills.drills);
+    mode = pick(["drill:" + pick(drillKeys), "conj", "tense-id", "voc-es", "voc-en", "num", "type", "frase"]);
+    q.sub = mode;
+  }
+  if (mode === "num") { q.card = genNumCard(); return renderQuiz(); }
+  if (mode === "listen") {
+    const s = pick(S.data.frases.situaciones);
+    const [es, en] = pick(s.phrases);
+    const pool = new Set([en.split("(")[0].trim()]);
+    let g = 0;
+    while (pool.size < 4 && g++ < 40) pool.add(pick(pick(S.data.frases.situaciones).phrases)[1].split("(")[0].trim());
+    q.card = { q: "🔊", meta: "What did you hear? (tap 🔊 to repeat)", audio: es, correct: en.split("(")[0].trim(), opts: shuffle([...pool]), qSerif: false };
+    speak(es);
+    return renderQuiz();
+  }
+  if (mode === "dictado") {
+    const s = pick(S.data.frases.situaciones);
+    const cands = s.phrases.filter((p) => { const n = p[0].split(/\s+/).length; return n >= 3 && n <= 7; });
+    const [es, en] = pick(cands.length ? cands : s.phrases);
+    const words = es.split(/\s+/);
+    q.card = { dictado: true, audio: es, en: en.split("(")[0].trim(), words, order: shuffle(words.map((_, i) => i)), built: [], done: false };
+    speak(es);
+    return renderQuiz();
+  }
+  if (mode === "type") {
+    const v = pick(S.data.verbos.verbos);
+    const tk = pick(TENSE_KEYS);
+    const pi = Math.floor(Math.random() * 6);
+    q.card = { typeIn: true, lemma: v.lemma, meta: `${S.data.verbos.personas[pi]} · ${S.data.verbos.tiempos[tk]} · (${v.en})`, correct: v[tk][pi], hint: S.data.verbos.uso[tk] };
+    return renderQuiz();
+  }
+  if (mode.startsWith("drill:")) {
+    const set = S.data.drills.drills[mode.slice(6)];
     const item = pick(set.items);
     q.card = { frase: item[0], opts: shuffle([...set.options]), correct: item[1], why: item[2], en: item[3] || "" };
-  } else if (q.mode === "conj") {
+  } else if (mode === "conj") {
     const v = pick(S.data.verbos.verbos);
     const tk = pick(TENSE_KEYS);
     const pi = Math.floor(Math.random() * 6);
@@ -267,7 +329,7 @@ function nextQuestion() {
     let guard = 0;
     while (pool.size < 4 && guard++ < 80) pool.add(pick(v[pick(TENSE_KEYS)]));
     q.card = { q: v.lemma, meta: `${S.data.verbos.personas[pi]} · ${S.data.verbos.tiempos[tk]} · (${v.en})`, correct, opts: shuffle([...pool]) };
-  } else if (q.mode === "tense-id") {
+  } else if (mode === "tense-id") {
     const v = pick(S.data.verbos.verbos);
     const tk = pick(TENSE_KEYS);
     const pi = Math.floor(Math.random() * 6);
@@ -276,22 +338,22 @@ function nextQuestion() {
     let guard = 0;
     while (pool.size < 4 && guard++ < 40) pool.add(T[pick(TENSE_KEYS)]);
     q.card = { q: v[tk][pi], meta: `${v.lemma} (${v.en}) · ${S.data.verbos.personas[pi]} — which tense is this?`, correct: T[tk], opts: shuffle([...pool]), qSerif: true };
-  } else if (q.mode === "voc-es" || q.mode === "voc-en") {
+  } else if (mode === "voc-es" || mode === "voc-en") {
     const t = pick(S.data.vocab.temas);
     const w = pick(t.words);
-    const es2en = q.mode === "voc-es";
+    const es2en = mode === "voc-es";
     const correct = es2en ? w[1] : w[0];
     const pool = new Set([correct]);
     let guard = 0;
     while (pool.size < 4 && guard++ < 60) { const o = pick(t.words); pool.add(es2en ? o[1] : o[0]); }
     q.card = { q: es2en ? w[0] : w[1], meta: t.label, correct, opts: shuffle([...pool]), qSerif: es2en };
-  } else if (q.mode === "frase") {
+  } else if (mode === "frase") {
     const s = pick(S.data.frases.situaciones);
     const cands = s.phrases.filter((p) => { const n = p[0].split(/\s+/).length; return n >= 3 && n <= 8; });
     const [es, en] = pick(cands.length ? cands : s.phrases);
     const words = es.split(/\s+/);
     q.card = { en: en.split("(")[0].trim(), words, order: shuffle(words.map((_, i) => i)), built: [], done: false };
-  } else if (q.mode === "dic") {
+  } else if (mode === "dic") {
     const now = Date.now();
     const due = S.dic.filter((d) => !d.due || d.due <= now);
     q.card = { w: pick(due.length ? due : S.dic), revealed: false };
@@ -303,7 +365,31 @@ function renderQuiz() {
   const q = S.quiz, c = q.card;
   const head = `<button class="back" onclick="S.quiz=null;render()">← Practice</button>
     <div class="score"><span>✓ ${q.score}/${q.total}</span><span>streak ${q.streak}</span></div>`;
-  if (q.mode.startsWith("drill:")) {
+  if (c && c.dictado) {
+    app.innerHTML = `${head}
+      <div class="quiz"><div class="qm">Listen and rebuild the sentence:</div>
+      <button class="btn ghost" style="margin-bottom:10px" onclick="speak(S.quiz.card.audio)">🔊 Play again</button>
+      <div class="built serif">${c.built.map((i) => esc(c.words[i])).join(" ") || "&nbsp;"}</div>
+      <div class="wordbank">${c.order.map((i) => `<button class="wtoken ${c.built.includes(i) ? "used" : ""}" onclick="tapToken(${i})">${esc(c.words[i])}</button>`).join("")}</div>
+      ${c.done ? `<div style="color:var(--ok);font-weight:700;margin:8px 0">¡Correcto! — ${esc(c.en)}</div><button class="btn" onclick="nextQuestion()">Next →</button>` : `<button class="btn ghost" onclick="S.quiz.card.built=[];renderQuiz()">Clear</button>`}
+      </div>`;
+    return;
+  }
+  if (c && c.typeIn) {
+    app.innerHTML = `${head}
+      <div class="quiz">
+        <div class="q serif">${esc(c.lemma)}</div>
+        <div class="qm">${esc(c.meta)}</div>
+        <input type="text" id="typeAns" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type the form…" style="text-align:center;font-size:18px" onkeydown="if(event.key==='Enter')checkTyped()">
+        <div id="typeFb" style="margin-top:10px;font-size:15px"></div>
+        <div class="btnrow" style="justify-content:center;margin-top:8px">
+          <button class="btn" onclick="checkTyped()">Check</button>
+        </div>
+      </div>`;
+    setTimeout(() => { const el = $("typeAns"); if (el) el.focus(); }, 50);
+    return;
+  }
+  if (q.mode.startsWith("drill:") || (q.sub && q.sub.startsWith("drill:") && c && c.frase)) {
     app.innerHTML = `${head}
       <div class="quiz">
         <div class="q serif" style="font-size:22px">${esc(c.frase)}</div>
@@ -339,6 +425,7 @@ function renderQuiz() {
   app.innerHTML = `${head}
     <div class="quiz">
       <div class="q ${c.qSerif === false ? "" : "serif"}">${esc(c.q)}</div>
+      ${c.audio ? `<button class="btn ghost" style="margin:6px 0" onclick="speak(S.quiz.card.audio)">🔊 Play again</button>` : ""}
       <div class="qm">${esc(c.meta)}</div>
       <div class="opts">${c.opts.map((o) => `<button class="opt" data-o="${esc(o)}" onclick="answer(this)">${esc(o)}</button>`).join("")}</div>
     </div>`;
@@ -424,9 +511,12 @@ function renderVocab() {
       <p class="hint">Tap the word for its card · + to save it</p>` : `
       <div class="chips">${sits.map((s, i) => `<button class="chip ${i === si ? "on" : ""}" onclick="go('vocab',{mode:'frases',s:${i}})">${esc(s.label)}</button>`).join("")}</div>
       ${sits[si].phrases.map(([es, en]) => `
-        <div class="card">
-          <div class="serif" style="font-size:17px">${spanish(es, en)}</div>
-          <div style="color:var(--muted);font-size:13px;margin-top:2px">${esc(en)}</div>
+        <div class="card row">
+          <div style="flex:1">
+            <div class="serif" style="font-size:17px">${spanish(es, en)}</div>
+            <div style="color:var(--muted);font-size:13px;margin-top:2px">${esc(en)}</div>
+          </div>
+          <button class="plus" onclick="event.stopPropagation();speak('${esc(es).replace(/'/g, "\\'")}')">🔊</button>
         </div>`).join("")}
       <p class="hint">Tap any word to investigate it</p>`}`;
 }
@@ -532,7 +622,8 @@ function renderTexto(i, mio) {
     <div class="row" style="align-items:flex-start">
       <div><h2 class="serif">${esc(t.titulo_es)}</h2>
       <div style="color:var(--muted);font-size:15px;margin-bottom:12px">${esc(t.titulo_en)}${t.lvl ? " · " + t.lvl : ""}</div></div>
-      <button class="chip ${S.hlMode ? "on" : ""}" id="hlBtn" onclick="S.hlMode=!S.hlMode;$('hlBtn').classList.toggle('on',S.hlMode);$('hlHint').textContent=S.hlMode?'Highlighter ON: tap words to mark / unmark them':'Tap a Spanish word to investigate · an English sentence to see its partner';">✏ Highlight</button>
+      <span><button class="chip" onclick="speak(${JSON.stringify(t.frases.map((f) => f[0]).join(" ")).replace(/"/g, "&quot;")})">🔊</button>
+      <button class="chip ${S.hlMode ? "on" : ""}" id="hlBtn" onclick="S.hlMode=!S.hlMode;$('hlBtn').classList.toggle('on',S.hlMode);$('hlHint').textContent=S.hlMode?'Highlighter ON: tap words to mark / unmark them':'Tap a Spanish word to investigate · an English sentence to see its partner';">✏ Highlight</button></span>
     </div>
     <p class="gtext">${t.frases.map(([es, en], si) => `<span class="pr pr-el" data-i="${si}">${spanish(es, en, tid + ":" + si)}</span>`).join(" ")}</p>
     <p class="estext">${t.frases.map(([es, en], si) => `<span class="sp pr pr-es" data-i="${si}">${esc(en)}</span>`).join(" ")}</p>
@@ -636,7 +727,7 @@ function closeSheet(ev) { if (!ev || ev.target === $("sheetOverlay")) $("sheetOv
 function wordSheet(word, ctxEs, ctxEn) {
   const hits = S.index.get(norm(word)) || [];
   const P = S.data.verbos.personas;
-  let html = `<div class="wbig">${esc(word)}</div>`;
+  let html = `<div class="wbig">${esc(word)} <button class="plus" style="vertical-align:middle" onclick="speak('${esc(word).replace(/'/g, "\\'")}')">🔊</button></div>`;
   let saveLemma = word, saveEs = ctxEn || "", savePos = "";
   const seen = new Set();
   const parts = [];
@@ -705,3 +796,127 @@ render();
 loadData().then(render).catch(() => {
   app.innerHTML = `<div class="err">Could not load data. Check your connection and reload (first load needs internet; after that it works offline).</div>`;
 });
+
+// ═════════ ITERATION 2: audio, numbers, typing, daily streak ═════════
+function speak(text) {
+  try {
+    const u = new SpeechSynthesisUtterance(String(text).replace(/[«»]/g, ""));
+    u.lang = "es-ES"; u.rate = 0.9;
+    const vs = speechSynthesis.getVoices().filter((v) => v.lang && v.lang.toLowerCase().startsWith("es"));
+    if (vs.length) u.voice = vs.find((v) => v.lang === "es-ES") || vs[0];
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+if ("speechSynthesis" in window) speechSynthesis.getVoices();
+
+const stripAcc = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+
+function checkTyped() {
+  const c = S.quiz.card;
+  const ans = ($("typeAns").value || "").trim();
+  if (!ans) return;
+  const fb = $("typeFb");
+  S.quiz.total++;
+  if (ans.toLowerCase().replace(/\s+/g, " ") === c.correct.toLowerCase()) {
+    S.quiz.score++; S.quiz.streak++;
+    fb.innerHTML = `<b style="color:var(--ok)">¡Perfecto! ✓ ${esc(c.correct)}</b>`;
+  } else if (stripAcc(ans) === stripAcc(c.correct)) {
+    S.quiz.score++; S.quiz.streak++;
+    fb.innerHTML = `<b style="color:var(--ok)">Almost perfect ✓</b> — watch the accents: <b class="serif">${esc(c.correct)}</b>`;
+  } else {
+    S.quiz.streak = 0;
+    fb.innerHTML = `<b style="color:var(--danger)">✗</b> The form is <b class="serif">${esc(c.correct)}</b><br><span style="color:var(--ink-soft);font-size:13px">${esc(c.hint || "")}</span>`;
+  }
+  fb.innerHTML += `<div style="margin-top:8px"><button class="btn" onclick="nextQuestion()">Next →</button></div>`;
+  $("typeAns").disabled = true;
+}
+
+// —— numbers, prices, years, clock — infinite generator ——
+const NU = ["cero","uno","dos","tres","cuatro","cinco","seis","siete","ocho","nueve","diez","once","doce","trece","catorce","quince","dieciséis","diecisiete","dieciocho","diecinueve","veinte","veintiuno","veintidós","veintitrés","veinticuatro","veinticinco","veintiséis","veintisiete","veintiocho","veintinueve"];
+const DEC = ["","","veinte","treinta","cuarenta","cincuenta","sesenta","setenta","ochenta","noventa"];
+const CEN = ["","ciento","doscientos","trescientos","cuatrocientos","quinientos","seiscientos","setecientos","ochocientos","novecientos"];
+function numToEs(n) {
+  if (n < 30) return NU[n];
+  if (n < 100) { const d = Math.floor(n / 10), r = n % 10; return DEC[d] + (r ? " y " + NU[r] : ""); }
+  if (n === 100) return "cien";
+  if (n < 1000) { const c = Math.floor(n / 100), r = n % 100; return CEN[c] + (r ? " " + numToEs(r) : ""); }
+  if (n < 1000000) {
+    const m = Math.floor(n / 1000), r = n % 1000;
+    return (m === 1 ? "mil" : numToEs(m) + " mil") + (r ? " " + numToEs(r) : "");
+  }
+  return String(n);
+}
+function timeToEs(h, m) {
+  const hh12 = ((h + 11) % 12) + 1;
+  const next12 = (hh12 % 12) + 1;
+  const art = (x) => (x === 1 ? "la una" : "las " + numToEs(x));
+  let core;
+  if (m === 0) core = art(hh12) + " en punto";
+  else if (m === 15) core = art(hh12) + " y cuarto";
+  else if (m === 30) core = art(hh12) + " y media";
+  else if (m === 45) core = art(next12) + " menos cuarto";
+  else if (m < 30) core = art(hh12) + " y " + numToEs(m);
+  else core = art(next12) + " menos " + numToEs(60 - m);
+  const parte = h < 6 ? "de la madrugada" : h < 12 ? "de la mañana" : h < 21 ? "de la tarde" : "de la noche";
+  return core + " " + parte;
+}
+function genNumCard() {
+  const kind = pick(["num", "num", "price", "year", "time", "time"]);
+  let display, correct, distract = new Set();
+  if (kind === "num") {
+    const n = pick([Math.floor(Math.random() * 100), Math.floor(Math.random() * 1000), Math.floor(Math.random() * 10000)]);
+    display = n.toLocaleString("es-ES"); correct = numToEs(n);
+    [n + 1, Math.max(0, n - 10), n + 100, n * 2 + 1, Math.max(0, n - 1)].forEach((d) => { if (d !== n) distract.add(numToEs(d)); });
+  } else if (kind === "price") {
+    const e = Math.floor(Math.random() * 200), c = pick([10, 20, 25, 50, 75, 90, 95]);
+    display = `${e},${String(c).padStart(2, "0")} €`;
+    correct = `${numToEs(e)} con ${numToEs(c)}`;
+    distract.add(`${numToEs(e + 1)} con ${numToEs(c)}`);
+    distract.add(`${numToEs(e)} con ${numToEs(c === 50 ? 15 : 50)}`);
+    distract.add(`${numToEs(Math.max(0, e - 10))} con ${numToEs(c)}`);
+  } else if (kind === "year") {
+    const y = 1900 + Math.floor(Math.random() * 131);
+    display = "año " + y; correct = numToEs(y);
+    distract.add(numToEs(y + 10)); distract.add(numToEs(y - 100 >= 0 ? y - 100 : y + 100)); distract.add(numToEs(y + 1));
+  } else {
+    const h = Math.floor(Math.random() * 24), m = pick([0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
+    display = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    correct = timeToEs(h, m);
+    distract.add(timeToEs((h + 1) % 24, m));
+    distract.add(timeToEs(h, (m + 15) % 60));
+    distract.add(timeToEs((h + 12) % 24, m));
+  }
+  const pool = [correct, ...shuffle([...distract]).slice(0, 3)];
+  return { q: display, meta: "How do you say it out loud?", correct, opts: shuffle(pool), qSerif: false };
+}
+
+// —— daily streak ——
+function getStreak() {
+  const d = JSON.parse(localStorage.getItem("lengua-daily") || "{}");
+  const today = new Date().toISOString().slice(0, 10);
+  return { streak: d.streak || 0, doneToday: d.last === today };
+}
+function renderDailyEnd() {
+  const q = S.quiz;
+  const today = new Date().toISOString().slice(0, 10);
+  const yest = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const d = JSON.parse(localStorage.getItem("lengua-daily") || "{}");
+  if (d.last !== today) {
+    d.streak = d.last === yest ? (d.streak || 0) + 1 : 1;
+    d.last = today;
+    localStorage.setItem("lengua-daily", JSON.stringify(d));
+  }
+  const pct = Math.round((q.score / q.total) * 100);
+  app.innerHTML = `
+    <div class="quiz" style="text-align:center;padding-top:40px">
+      <div style="font-size:52px">${pct >= 80 ? "🏆" : pct >= 50 ? "💪" : "📚"}</div>
+      <h2>Daily 10 done!</h2>
+      <p class="sub" style="text-align:center">${q.score}/${q.total} correct · streak: 🔥 ${d.streak} ${d.streak === 1 ? "day" : "days"}</p>
+      <p class="sub" style="text-align:center">${pct >= 80 ? "¡Eres un crack!" : pct >= 50 ? "¡Nada mal! Poco a poco." : "Mañana será mejor. ¡Ánimo!"}</p>
+      <div class="btnrow" style="justify-content:center">
+        <button class="btn" onclick="startQuiz('daily')">Another round</button>
+        <button class="btn ghost" onclick="S.quiz=null;render()">Back to Practice</button>
+      </div>
+    </div>`;
+}
