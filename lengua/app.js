@@ -10,6 +10,8 @@ const S = {
   miss: JSON.parse(localStorage.getItem("lengua-miss") || "[]"),
   stats: JSON.parse(localStorage.getItem("lengua-stats") || "{}"),
   focus: localStorage.getItem("lengua-focus") || "all",
+  doneLes: JSON.parse(localStorage.getItem("lengua-done-les") || "[]"),
+  seenVerbs: JSON.parse(localStorage.getItem("lengua-seen-verbs") || "[]"),
   quiz: null, hlMode: false, index: null,
 };
 
@@ -28,6 +30,23 @@ function saveMiss() { if (S.miss.length > 100) S.miss = S.miss.slice(-100); loca
 function saveStats() { localStorage.setItem("lengua-stats", JSON.stringify(S.stats)); }
 function bumpStat(key, ok) { const s = S.stats[key] || { o: 0, t: 0 }; s.t++; if (ok) s.o++; S.stats[key] = s; saveStats(); }
 function setFocus(f) { S.focus = f; localStorage.setItem("lengua-focus", f); render(); }
+function toggleLesson(id) { const i = S.doneLes.indexOf(id); if (i > -1) S.doneLes.splice(i, 1); else S.doneLes.push(id); localStorage.setItem("lengua-done-les", JSON.stringify(S.doneLes)); render(); }
+function markVerbSeen(lemma) { if (!S.seenVerbs.includes(lemma)) { S.seenVerbs.push(lemma); localStorage.setItem("lengua-seen-verbs", JSON.stringify(S.seenVerbs)); } }
+const PATH = {
+  A2: ["serestar", "generos", "genero_leccion", "quetiempo", "pronombres", "gustar", "negacion", "numeros", "comparativos", "exclamativas", "preposiciones", "tuusted", "acentos", "pronunciacion"],
+  B1: ["dospasados", "perfecto", "reflexivos", "objetos", "llevar", "deixis", "porpara", "futuros", "imperativo", "relativos", "seimpersonal", "perosino", "diminutivos", "mente", "conectores"],
+  B2: ["subjuntivo1", "subjuntivo2", "coloquial", "falsos", "anglicismos", "powerverbs", "refranes", "cartas"],
+};
+function orderedLessons() {
+  const L = S.data.lecciones.lecciones;
+  const byId = {}; L.forEach((l, i) => (byId[l.id] = i));
+  const out = { A2: [], B1: [], B2: [] };
+  for (const lv of ["A2", "B1", "B2"]) {
+    for (const id of PATH[lv]) if (byId[id] != null) { out[lv].push(byId[id]); delete byId[id]; }
+  }
+  for (const id in byId) { const l = L[byId[id]]; (out[l.lvl] || out.B2).push(byId[id]); }
+  return out;
+}
 function updateDicCount() { $("dicCount").textContent = S.dic.length ? `Words·${S.dic.length}` : "My words"; }
 
 // ————— data + reverse index —————
@@ -170,27 +189,46 @@ function renderCurso() {
   if (S.view && S.view.lesson != null) return renderLesson(S.view.lesson);
   if (S.view && S.view.verb != null) return renderVerb(S.view.verb);
   if (S.view && S.view.chuletas) return renderChuletas();
+  if (S.view && S.view.verbs) return renderVerbList();
   const L = S.data.lecciones.lecciones, V = S.data.verbos.verbos;
   const day = Math.floor(Date.now() / 864e5);
   const dv = V[day % V.length];
   const allW = S.data.vocab.temas.flatMap((t) => t.words);
   const dw = allW[day % allW.length];
   const dvi = day % V.length;
+  const ord = orderedLessons();
+  const LEVELS = [["A2", "Foundations", "The machinery: ser/estar, gender, present, pronouns"], ["B1", "Real fluency", "Past tenses, object pronouns, the daily-life engine"], ["B2", "Native polish", "Subjunctive, street Spanish, sounding local"]];
+  const doneCount = (lv) => ord[lv].filter((i) => S.doneLes.includes(L[i].id)).length;
+  const total = L.length, doneTotal = S.doneLes.filter((id) => L.some((l) => l.id === id)).length;
+  let nextI = null;
+  for (const lv of ["A2", "B1", "B2"]) { for (const i of ord[lv]) if (!S.doneLes.includes(L[i].id)) { nextI = i; break; } if (nextI != null) break; }
+  const bar = (n, t) => `<div style="height:8px;background:var(--paper-deep);border-radius:99px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${t ? Math.round((n / t) * 100) : 0}%;background:var(--honey-deep)"></div></div>`;
   app.innerHTML = `
     <h1>The course</h1>
-    <p class="sub">Spanish grammar built for English speakers who already speak but never studied. Tap any Spanish word anywhere to investigate it — everything works offline.</p>
+    <p class="sub">A guided path from "speaks by ear" to "sounds local". Tap any Spanish word anywhere to investigate it.</p>
+    <div class="card"><div class="row"><div class="t">Your progress</div><div class="s">${doneTotal}/${total} lessons · ${S.seenVerbs.length}/${V.length} verbs</div></div>${bar(doneTotal, total)}</div>
+    ${nextI != null ? `<div class="card tap" style="border-color:var(--honey-deep)" onclick="go('curso',{lesson:${nextI}})"><div class="s">▶ Continue the path</div><div class="t">${esc(L[nextI].title)}</div><div class="s">${esc(L[nextI].sub)} · ${L[nextI].lvl}</div></div>` : `<div class="card"><div class="t">🏆 Path complete!</div><div class="s">You have finished every lesson. Eres una leyenda.</div></div>`}
     <div class="row" style="gap:8px">
       <div class="card tap" style="flex:1" onclick="go('curso',{verb:${dvi}})"><div class="s">⭐ Verb of the day</div><div class="t serif">${esc(dv.lemma)}</div><div class="s">${esc(dv.en)}</div></div>
       <div class="card tap" style="flex:1" onclick="wordSheet('${esc(dw[0]).replace(/'/g, "\\'")}')"><div class="s">⭐ Word of the day</div><div class="t serif">${esc(dw[0])}</div><div class="s">${esc(dw[1])}</div></div>
     </div>
-    <div class="card tap" onclick="go('curso',{chuletas:1})"><div class="t">📌 Chuletas — cheat sheets</div><div class="s">Endings, strong preterites, subjunctive triggers, por/para & ser/estar at a glance</div></div>
-    <div class="stitle">Lessons · ${L.length}</div>
-    ${L.map((l, i) => `
-      <div class="card tap row" onclick="go('curso',{lesson:${i}})">
-        <div><div class="t">${esc(l.title)}</div><div class="s">${esc(l.sub)}</div></div>
-        <span class="lvl">${l.lvl}</span>
-      </div>`).join("")}
-    <div class="stitle">Verbs, fully conjugated · ${V.length}</div>
+    <div class="card tap" onclick="go('curso',{verbs:1})"><div class="t">🔤 The ${V.length} verbs</div><div class="s">Every conjugation, grouped by pattern family · studied ${S.seenVerbs.length}</div></div>
+    <div class="card tap" onclick="go('curso',{chuletas:1})"><div class="t">📌 Chuletas — cheat sheets</div><div class="s">Endings, strong preterites, subjunctive triggers, por/para & ser/estar</div></div>
+    ${LEVELS.map(([lv, name, sub]) => `
+      <div class="stitle" style="margin-top:18px">${lv} · ${name} <span style="font-weight:400;text-transform:none;letter-spacing:0">— ${doneCount(lv)}/${ord[lv].length}</span></div>
+      <div class="s" style="margin:-4px 0 8px;color:var(--muted)">${sub}</div>
+      ${ord[lv].map((i, k) => { const l = L[i]; const done = S.doneLes.includes(l.id); return `
+        <div class="card tap row" style="${done ? "opacity:.72" : ""}" onclick="go('curso',{lesson:${i}})">
+          <div style="display:flex;gap:10px;align-items:center"><span style="font-size:18px">${done ? "✅" : "•"}</span><div><div class="t">${k + 1}. ${esc(l.title)}</div><div class="s">${esc(l.sub)}</div></div></div>
+        </div>`; }).join("")}`).join("")}`;
+}
+
+function renderVerbList() {
+  const V = S.data.verbos.verbos;
+  app.innerHTML = `
+    <button class="back" onclick="go('curso')">← The course</button>
+    <h1>The ${V.length} verbs</h1>
+    <p class="sub">Grouped by pattern family — learn one pattern, unlock the whole family. Verbs you have opened get a ✓ (${S.seenVerbs.length} so far).</p>
     <input type="text" id="vFilter" placeholder="Search a verb… (Spanish or English, e.g. dormir / to sleep)" oninput="filterVerbs()" style="margin-bottom:10px">
     ${verbGroups(V)}`;
 }
@@ -211,7 +249,7 @@ function verbGroups(V) {
     const items = V.map((v, i) => {
       if (used.has(i) || !test(v.tipo)) return "";
       used.add(i);
-      return `<button class="chip vchip" data-t="${esc(norm(v.lemma + " " + v.en + " " + v.pret[0]))}" onclick="go('curso',{verb:${i}})"><span class="serif">${esc(v.lemma)}</span> · ${esc(v.en)}</button>`;
+      return `<button class="chip vchip" data-t="${esc(norm(v.lemma + " " + v.en + " " + v.pret[0]))}" onclick="go('curso',{verb:${i}})">${S.seenVerbs.includes(v.lemma) ? "✓ " : ""}<span class="serif">${esc(v.lemma)}</span> · ${esc(v.en)}</button>`;
     }).join("");
     return items ? `<div class="stitle" style="font-size:11px;margin-top:10px">${label}</div><div class="chips">${items}</div>` : "";
   }).join("");
@@ -227,7 +265,7 @@ function filterVerbs() {
 function renderLesson(i) {
   const l = S.data.lecciones.lecciones[i];
   app.innerHTML = `
-    <button class="back" onclick="go('curso')">← Lessons</button>
+    <button class="back" onclick="go('curso')">← The course</button>
     <h2>${esc(l.title)}</h2>
     <div class="s serif" style="font-size:15px;margin-bottom:14px">${esc(l.sub)} · ${l.lvl}</div>
     ${l.blocks.map((b) => {
@@ -235,19 +273,25 @@ function renderLesson(i) {
       if (b.t === "tbl") return `<div class="tblwrap"><table>${b.h.some(x=>x) ? `<tr>${b.h.map((h) => `<th>${esc(h)}</th>`).join("")}</tr>` : ""}${b.r.map((row) => `<tr>${row.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</table></div>`;
       return `<div class="ex"><div class="el">${spanish(b.es, b.en)}</div><div class="es">${esc(b.en)}</div></div>`;
     }).join("")}
-    <div class="notice">Questions about this lesson? Ask Claude, then save what you learn as a note on any word.</div>`;
+    <div class="notice">Questions about this lesson? Ask Claude, then save what you learn as a note on any word.</div>
+    ${(() => { const done = S.doneLes.includes(l.id); const ord = orderedLessons(); const flat = [...ord.A2, ...ord.B1, ...ord.B2]; const pos = flat.indexOf(i); const nxt = pos > -1 && pos < flat.length - 1 ? flat[pos + 1] : null; return `
+      <div class="btnrow" style="margin-top:18px">
+        <button class="btn ${done ? "ghost" : ""}" onclick="toggleLesson('${l.id}')">${done ? "✅ Completed — tap to unmark" : "Mark as complete ✓"}</button>
+        ${nxt != null ? `<button class="btn ghost" onclick="go('curso',{lesson:${nxt}})">Next lesson →</button>` : ""}
+      </div>`; })()}`;
 }
 
 const USO_SHORT = { pres:"now / habits", pret:"did (completed)", imp:"was doing / used to", fut:"will / must be", cond:"would / politeness", subj:"after que-triggers", subimp:"if I… / past triggers" };
 
 function renderVerb(i) {
   const v = S.data.verbos.verbos[i], P = S.data.verbos.personas, T = S.data.verbos.tiempos;
+  markVerbSeen(v.lemma);
   const saved = S.dic.some((d) => d.lemma === v.lemma);
   const pair = (tk) => `
     <div class="stitle" style="margin-top:14px">${T[tk]} <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--honey-deep)">· ${USO_SHORT[tk]}</span></div>
     <div class="tblwrap"><table>${P.map((p, j) => `<tr><td style="width:38%">${esc(p)}</td><td class="gr">${esc(v[tk][j])}</td></tr>`).join("")}</table></div>`;
   app.innerHTML = `
-    <button class="back" onclick="go('curso')">← Verbs</button>
+    <button class="back" onclick="go('curso',{verbs:1})">← The verbs</button>
     <h2 class="serif">${esc(v.lemma)}</h2>
     <p class="sub">${esc(v.en)} · type ${esc(v.tipo)} · gerund: <b class="serif">${esc(v.ger)}</b> · participle: <b class="serif">${esc(v.part)}</b> · imperative: <b class="serif">${esc(v.imper[0])} / ${esc(v.imper[1])}</b></p>
     ${v.nota ? `<div class="notice">${esc(v.nota)}</div>` : ""}
@@ -628,13 +672,13 @@ function renderTextos() {
   app.innerHTML = `
     <h1>Parallel texts</h1>
     <p class="sub">Readings in Spanish and English, sentence by sentence. Tap Spanish words to investigate them, English sentences to see their partner, and use the highlighter ✏.</p>
-    ${["Serie", "A2", "B1", "B2"].map((lv) => {
+    ${["Serie", "Prensa", "A2", "B1", "B2"].map((lv) => {
       const items = T.map((t, i) => t.lvl === lv ? `
         <div class="card tap row" onclick="go('textos',{texto:${i}})">
           <div><div class="t serif">${esc(t.titulo_es)}</div><div class="s" style="font-family:inherit">${esc(t.titulo_en)}</div></div>
           <span class="lvl">${t.frases.length} sentences</span>
         </div>` : "").join("");
-      return items ? `<div class="stitle">${lv === "Serie" ? "📖 The series · Sam en Barcelona" : "Level " + lv}</div>${items}` : "";
+      return items ? `<div class="stitle">${lv === "Serie" ? "📖 The series · Sam en Barcelona" : lv === "Prensa" ? "📰 From the press" : "Level " + lv}</div>${items}` : "";
     }).join("")}
     <div class="stitle">My texts · ${S.mistextos.length}</div>
     ${S.mistextos.map((t, i) => `
